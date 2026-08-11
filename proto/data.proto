@@ -1,0 +1,127 @@
+// Copyright (c) 2026 the go-widgets/data authors. All rights reserved.
+// Use of this source code is governed by a BSD-3-Clause license that can be
+// found in the LICENSE file at the root of this repository.
+
+syntax = "proto3";
+
+package datapb;
+
+option go_package = "github.com/go-widgets/data/datapb";
+
+// Kind mirrors data.Kind: the scalar type of a Value.
+enum Kind {
+  KIND_STRING = 0;
+  KIND_INT = 1;
+  KIND_FLOAT = 2;
+  KIND_BOOL = 3;
+}
+
+// Value mirrors data.Value: a tagged scalar. Only the field named by kind is
+// meaningful.
+message Value {
+  Kind kind = 1;
+  string str = 2;
+  int64 int = 3;
+  double float = 4;
+  bool bool = 5;
+}
+
+// Record mirrors data.Record: a row of named cells.
+message Record {
+  map<string, Value> fields = 1;
+}
+
+// FilterOp mirrors data.FilterOp.
+enum FilterOp {
+  OP_EQ = 0;
+  OP_NE = 1;
+  OP_LT = 2;
+  OP_LE = 3;
+  OP_GT = 4;
+  OP_GE = 5;
+  OP_CONTAINS = 6;
+}
+
+message Filter {
+  string field = 1;
+  FilterOp op = 2;
+  Value value = 3;
+}
+
+message Sort {
+  string field = 1;
+  bool desc = 2;
+}
+
+// AggFunc mirrors data.AggFunc.
+enum AggFunc {
+  AGG_COUNT = 0;
+  AGG_SUM = 1;
+  AGG_AVG = 2;
+  AGG_MIN = 3;
+  AGG_MAX = 4;
+}
+
+message Agg {
+  string field = 1;
+  AggFunc func = 2;
+}
+
+// Query mirrors data.Query: filter, sort, group, page, aggregate.
+message Query {
+  repeated Filter filters = 1;
+  repeated Sort sorts = 2;
+  string group_by = 3;
+  int32 offset = 4;
+  int32 limit = 5;
+  repeated Agg aggs = 6;
+}
+
+// Group mirrors data.Group.
+message Group {
+  Value key = 1;
+  repeated Record rows = 2;
+  map<string, Value> aggregates = 3;
+}
+
+// View mirrors data.View. The grouped flag distinguishes a grouped view (whose
+// Rows is nil and Groups non-nil) from an ungrouped one, which repeated fields
+// alone cannot carry across the wire.
+message View {
+  repeated Record rows = 1;
+  repeated Group groups = 2;
+  int32 total = 3;
+  map<string, Value> aggregates = 4;
+  bool grouped = 5;
+}
+
+// MutationKind mirrors data.MutationKind.
+enum MutationKind {
+  MUT_INSERT = 0;
+  MUT_UPDATE = 1;
+  MUT_DELETE = 2;
+}
+
+message Mutation {
+  MutationKind kind = 1;
+  Record record = 2;
+  Value key = 3;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated Record records = 1;
+}
+
+message MutateResponse {}
+
+// DataService is the small list/query/mutate contract a grpcproxy.Client speaks
+// to a grpcproxy.Server. The Server delegates each call to any data.Proxy (a
+// MemoryProxy in practice), so the same query pipeline runs server-side and the
+// client gets back the identical View.
+service DataService {
+  rpc List(.datapb.ListRequest) returns (.datapb.ListResponse);
+  rpc Query(.datapb.Query) returns (.datapb.View);
+  rpc Mutate(.datapb.Mutation) returns (.datapb.MutateResponse);
+}

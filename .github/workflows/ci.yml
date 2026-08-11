@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOWORK: "off"
+  CGO_ENABLED: "0"
+
+jobs:
+  test:
+    name: Build + test + 100% coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.4"
+          check-latest: true
+          cache: true
+
+      - name: gofmt
+        run: |
+          # The generated protobuf sources under datapb/ are gofmt-clean as
+          # emitted; everything else must be too.
+          unformatted=$(gofmt -l .)
+          [ -z "$unformatted" ] || {
+            echo "::error::not gofmt-clean:"; echo "$unformatted"
+            gofmt -d $unformatted; exit 1; }
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Test with coverage
+        run: go test -coverprofile=coverage.out ./...
+
+      - name: Assert 100% statement coverage (excluding generated code)
+        run: |
+          # datapb/ is protoc-generated (DO NOT EDIT); its getters/reflection
+          # are not our statements to test, so drop them from the profile before
+          # gating. Every hand-written statement in data/ and grpcproxy/ must be
+          # 100% covered — no rounding.
+          grep -v 'github.com/go-widgets/data/datapb/' coverage.out > coverage.filtered
+          go tool cover -func=coverage.filtered
+          below=$(go tool cover -func=coverage.filtered | awk '$NF != "100.0%"')
+          if [ -n "$below" ]; then
+            echo "::error::coverage below 100% on:"
+            echo "$below"
+            exit 1
+          fi
+
+      - name: Race detector (CGO on, for -race only)
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./...
+
+      - name: Cross-compile smoke (6 64-bit arches + wasm + darwin + windows)
+        run: |
+          for arch in amd64 arm64 riscv64 loong64 ppc64le s390x; do
+            echo "== linux/$arch =="
+            GOOS=linux GOARCH=$arch go build ./...
+          done
+          # The GRPCProxy client compiles to wasm (the server is native-only,
+          # gated //go:build !js) — this is what lets a browser run the same
+          # data pipeline.
+          GOOS=js      GOARCH=wasm  go build ./...
+          GOOS=darwin  GOARCH=arm64 go build ./...
+          GOOS=windows GOARCH=amd64 go build ./...
