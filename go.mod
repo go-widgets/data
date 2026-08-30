@@ -6,7 +6,7 @@ require (
 	github.com/go-widgets/mvvm v0.5.0
 	github.com/grpc-transports/websocket v0.0.0-20260807130344-e208e98ee231
 	google.golang.org/grpc v1.80.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
